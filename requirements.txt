@@ -1,0 +1,8 @@
+fastapi==0.81.0
+uvicorn==0.18.3  # FastAPI's ASGI server for production
+motor==3.0.0
+numpy==1.23.1
+pydantic==1.10.2
+certifi==2022.6.15
+transformers==4.21.1
+torch==1.12.1
