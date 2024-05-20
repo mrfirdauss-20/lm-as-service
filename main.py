@@ -5,28 +5,36 @@ from typing import List, Optional, Any
 from pydantic_mongo import PydanticObjectId
 import requests
 from io import BytesIO
-from motor import MotorClient
+from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from pydantic import BaseModel,Field
 import certifi
 from gradio_client import Client
 
 
-extractor = Client('mrfirdauss/CV-Extractor')
+client = Client('mrfirdauss/CV-Extractor')
 class CV(BaseModel):
     id: Optional[PydanticObjectId] = Field(alias='_id')
     name: str = Field(...)
     skills: List[str] = Field(...)
     experiences: List[dict[str, Any]] = Field(...)
     educations: List[dict[str, Any]] = Field(...)
-    
     class Config:
         allow_population_by_field_name = True
         json_encoders = {
-                ObjectId: str
-            }
+            ObjectId: str
+        }
+class CVExtracted(BaseModel):
+    name: str = Field(...)
+    skills: List[str] = Field(...)
+    experiences: List[dict[str, Any]] = Field(...)
+    educations: List[dict[str, Any]] = Field(...)
+
 class InsertedText(BaseModel):
     text: str
+
+class InsertedLink(BaseModel):
+    link: str
 
 uri = "mongodb+srv://dutee_1:KqBeHX6ybIHmV7N7@cluster0.fngwqyd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 db = {}
@@ -35,7 +43,7 @@ db = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Load the DB
-    client = MotorClient(uri, tlsCAFile=certifi.where())
+    client = AsyncIOMotorClient(uri, tlsCAFile=certifi.where())
     try:
         db['database'] = client.get_database("tugas-akhir")
         yield
@@ -54,10 +62,16 @@ async def get_all():
         res.append(CV(**i))
     return res
 
+@app.post("/cv/ext", response_model=CV)
+async def extract(text: InsertedText):
+    dictresult = client.predict(text.text)
+    res = await db['database']["application-cvs"].insert_one(dictresult)
+    cv = await db['database']["application-cvs"].find_one({"_id": res.inserted_id})
+    return CV(**cv)
 
 @app.post("/cv/", response_model=CV)
-async def extract(text: InsertedText):
-    response = requests.get(text.text)
+async def extract(link: InsertedLink):
+    response = requests.get(link.link)
     if response.status_code == 200:
         # Open the PDF from bytes in memory
         pdf_reader = PdfReader(BytesIO(response.content))
@@ -70,9 +84,10 @@ async def extract(text: InsertedText):
     else:
         #return error, make 500 because file server error
         raise HTTPException(status_code=response.status_code, detail="File server error")
-    dictresult = extractor.predict(text)
-    #dict to CV model
-    cv = CV(**dictresult)
-    return cv
+
+    dictresult = client.predict(text)
+    res = await db['database']["application-cvs"].insert_one(dictresult)
+    cv = await db['database']["application-cvs"].find_one({"_id": res.inserted_id})
+    return CV(**cv)
 
 
